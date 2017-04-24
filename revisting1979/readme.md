@@ -1,4 +1,4 @@
-These directories contain scripts and data to reproduce the data in the paper "On the temperature dependence of subthreshold currents in MOS electron inversion layers, revisited"
+These directories contain scripts and data to reproduce the data in the paper "On the temperature dependence of subthreshold currents in MOS electron inversion layers, revisited".  The graphs can be generated through MATLAB by typing "runme".  The citation for this work is here:
 
 @inproceedings{degnan2016temperature,
   title={On the temperature dependence of subthreshold currents in MOS electron inversion layers, revisited},
