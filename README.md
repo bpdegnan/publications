@@ -1,6 +1,10 @@
 # Publications
 
-This repository contains support documentation for my publications. 
+This repository contains support documentation for my publications.   
+
+If you want data from my [other papers](https://scholar.google.com/citations?user=58Hq0eMAAAAJ), please contact me via [GitHub](https://github.com/bpdegnan).
+
+
 
 ## revisiting1979
 
