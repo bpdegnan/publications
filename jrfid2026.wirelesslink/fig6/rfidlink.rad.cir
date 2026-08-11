@@ -1,0 +1,182 @@
+* ============================================================
+* rfidlink.rad.cir
+* rfidlink.cir with the tag dipole rotated about the line of sight.
+* Same 900 MHz link (reader -> free space 1 m -> tag dipole -> match ->
+* charge pump -> backscatter modulator -> reader carrier canceller ->
+* homodyne), but the receive-antenna rotation psi is swept so you can see
+* the link power roll off as the tag's polarization mismatches the reader.
+*
+* This is the rotating-antenna companion to dipole/twoport.kron.rad.cir,
+* which validates the same cos(psi) law on the bare two-port.
+* ============================================================
+.lib "$SPICE_LIB/sky130.lib.spice" tt
+.include "$SPICE_DEVICES/devices.cir"
+
+* ---- global parameters ----
+.param fc    = 900e6
+.param w     = {2*3.141592653589793*fc}
+.param Pin   = 1.0                  ; reader power into its antenna [W]
+.param Vamp  = {sqrt(8*73.08*Pin)}  ; reader Thevenin amplitude (~24.16 V)
+
+* antenna self/mutual at 1 m (validated dipole two-port)
+.param Rself = 73.08
+.param Lself = 7.515n               ; wL = +42.5 ohm
+
+* ---- tag rotation about the line of sight (polarization mismatch) ----
+* psideg is overridden in the .control loop; cos(psi) scales the coupling.
+.param pinum = 3.141592653589793
+.param psideg= 0                     ; receive-dipole rotation [deg]
+.param cpsi  = {cos(psideg*pinum/180)}
+.param K12_0 = 0.1481               ; broadside mutual coupling (M = 1.113 nH)
+.param R21_0 = 0.571                ; broadside mutual (radiative) resistance [ohm]
+.param K12   = {K12_0*cpsi}          ; reactive coupling rolled off by cos(psi)
+.param R21   = {R21_0*cpsi}          ; radiative coupling rolled off by cos(psi)
+.param Cmatch= 4.16p                ; series C conjugates the reader antenna
+
+* strap + matching (TUNE for your rectifier + antenna reactance)
+.param Lstrap= 2n
+.param Rstrap= 1.0
+.param Lmat  = 35n
+.param Cmat  = 0.6p
+
+* backscatter modulator control
+.param Vmodhi= 2.5                  ; modulator gate high = tag supply rail (vdd ~2.4 V).
+.param Tbit  = 200n                 ; one backscatter data bit 
+.param Nmod  = 128                  ; modulator switch width = 128 parallel abnmos
+                                    ; UNIT cells (m=Nmod). 
+
+* ---- expose the swept angle to the .control section ----
+.csparam c_psideg = {psideg}
+.csparam c_cpsi   = {cpsi}
+
+* =====================================================================
+*  1) READER  (ideal CW, conjugate-matched to its antenna, 1 W)
+* =====================================================================
+Vtx   txin 0   DC 0  SIN(0 {Vamp} {fc})
+Rsrc  txin nrs {Rself}
+Csrc  nrs  nr1 {Cmatch}
+Vsns1 nr1  nr2 0                       ; ammeter: reader antenna current I1
+Brad1 nr2  nr3 V = {R21}*i(Vsns2)     ; radiative coupling: EMF from tag I2
+Rrad1 nr3  nr4 {Rself}
+L1    nr4  0   {Lself}
+
+* =====================================================================
+*  2) FREE SPACE @ 1 m = two-port coupling (reactive K12 + radiative R21)
+* =====================================================================
+K12   L1 L2 {K12}
+
+* =====================================================================
+*  3) TAG DIPOLE (floating/differential), EMF = Z21*I1 via K12 + Brad2
+* =====================================================================
+L2    tp   ta  {Lself}
+Vsns2 ta   tb  0                       ; ammeter: tag antenna current I2
+Brad2 tb   tc  V = {R21}*i(Vsns1)     ; radiative coupling: EMF from reader I1
+Rrad2 tc   tn  {Rself}
+
+* =====================================================================
+*  4) STRAP + CONJUGATE MATCH (differential) -> rfp, rfn
+* =====================================================================
+Lsp   tp   m1  {Lstrap/2}
+Rsp   m1   m2  {Rstrap/2}
+Lmp   m2   rfp {Lmat/2}
+Lsn   tn   m3  {Lstrap/2}
+Rsn   m3   m4  {Rstrap/2}
+Lmn   m4   rfn {Lmat/2}
+Cm    rfp  rfn {Cmat}
+Rcmp  rfp  0   1e6                     ; weak common-mode reference
+Rcmn  rfn  0   1e6
+
+* =====================================================================
+*  5) CROSS-COUPLED CHARGE PUMP (one stage)   (drain gate source bulk)
+* =====================================================================
+XMN1  rfp rfn 0   0   abnmos
+XMN2  rfn rfp 0   0   abnmos
+XMP1  rfp rfn vdd vdd abpmos
+XMP2  rfn rfp vdd vdd abpmos
+Cstor vdd 0   2.5p
+Rload vdd 0   100k                     ; ~9 uW @ ~1 V light digital load
+
+* =====================================================================
+*  6) BACKSCATTER MODULATOR
+* =====================================================================
+Vmod  gmod 0   PWL(0 0  300n 0  301n {Vmodhi}  500n {Vmodhi}  501n 0
++                  700n 0  701n {Vmodhi}  1100n {Vmodhi}  1101n 0  1500n 0)
+XMmod rfp  gmod rfn 0  abnmos m={Nmod}
+
+* =====================================================================
+*  7) READER FRONT END: carrier cancellation -> homodyne I/Q
+* =====================================================================
+Vgc   gcn 0    DC 0                    ; cos-weight  (set by calibration, pass 2)
+Vgs   gsn 0    DC 0                    ; sin-weight
+Brx   rxres 0  V = i(Vsns1) - v(gcn)*cos({w}*time) - v(gsn)*sin({w}*time)
+
+* --- homodyne BEFORE cancellation (self-jammed reference) ---
+Bdi0  di0  0   V = i(Vsns1)*cos({w}*time)
+Rli0a di0  d0a 10k
+Cli0a d0a  0   2p
+Rli0b d0a  dif0 100k
+Cli0b dif0 0   0.2p
+Bdq0  dq0  0   V = i(Vsns1)*sin({w}*time)
+Rlq0a dq0  q0a 10k
+Clq0a q0a  0   2p
+Rlq0b q0a  qbb0 100k
+Clq0b qbb0 0   0.2p
+Bmag0 bsmag0 0 V = sqrt(v(dif0)*v(dif0) + v(qbb0)*v(qbb0))
+
+* --- homodyne AFTER cancellation (operates on the residual rxres) ---
+Bdi   di   0   V = v(rxres)*cos({w}*time)
+Rlpi1 di   dia 10k
+Clpi1 dia  0   2p
+Rlpi2 dia  dif 100k
+Clpi2 dif  0   0.2p
+Bdq   dq   0   V = v(rxres)*sin({w}*time)
+Rlpq1 dq   qia 10k
+Clpq1 qia  0   2p
+Rlpq2 qia  qbb 100k
+Clpq2 qbb  0   0.2p
+Bmag  bsmag 0  V = sqrt(v(dif)*v(dif) + v(qbb)*v(qbb))
+
+* =====================================================================
+*  analysis: sweep the tag rotation psi, two-pass carrier cancellation
+*  per angle, record one row of scalars per angle to rfidlink.rad.raw
+* =====================================================================
+.options gmin=1e-12 reltol=1e-4 abstol=1e-9 vntol=1e-7 method=gear
+.tran 10p 1500n 0 10p uic
+.control
+  * One row per angle. wrdata would broadcast each scalar down the transient's
+  * 150k-point time scale (the deck is .tran, not .ac lin 1), so emit a plain
+  * column file with echo redirection instead:
+  *   psideg  cos(psi)  vdd_ss  vdd_mod  bs_off  bs_on
+  echo "* psideg cos_psi vdd_ss vdd_mod bs_off bs_on" > rfidlink.rad.dat
+
+  let psi_lo   = 0
+  let psi_hi   = 85                  ; stop short of the 90 deg null (K12 -> 0)
+  let psi_step = 5
+
+  let val = psi_lo
+  while val le psi_hi
+    alterparam psideg = $&val          ; rotate the tag dipole ...
+    reset                              ; ... re-expand K12, R21 (and reset Vgc/Vgs)
+
+    * ---- pass 1: canceller OFF -- learn the self-jam carrier leakage ----
+    run
+    meas tran idc AVG v(dif0) from=260n to=295n
+    meas tran qdc AVG v(qbb0) from=260n to=295n
+    alter Vgc = 2*idc
+    alter Vgs = 2*qdc
+
+    * ---- pass 2: canceller ON -- the tag reply is now recoverable ----
+    run
+    meas tran vdd_ss  AVG v(vdd)   from=260n to=295n   ; tag harvested supply (CW)
+    meas tran vdd_mod MIN v(vdd)   from=300n to=1500n  ; deepest droop while modulating
+    meas tran bs_off  AVG v(bsmag) from=560n to=690n   ; reader recovered, 'data 0' (state A)
+    meas tran bs_on   AVG v(bsmag) from=900n to=1080n  ; reader recovered, 'data 1' (state B)
+
+    let cc = c_cpsi                    ; cos(psi), for the ideal-law overlay
+    echo "$&val $&cc $&vdd_ss $&vdd_mod $&bs_off $&bs_on" >> rfidlink.rad.dat
+    echo "psi =" $&val " deg : vdd_ss =" $&vdd_ss " V,  bs_off =" $&bs_off "  bs_on =" $&bs_on
+
+    let val = val + psi_step
+  end
+.endc
+.end
