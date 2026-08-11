@@ -1,0 +1,81 @@
+* twoport.kron.cir ===============================================
+* Two parallel, half-wave dipoles @ 900 MHz as a Kron equivalent
+* Brian Degnan, 2026JUN06 version
+* Please see notes in the paper
+* Licensed under GPL-3.  Please improve and publish.
+
+.lib "$SPICE_LIB/sky130.lib.spice" tt
+.include "$SPICE_DEVICES/devices.cir"
+
+* ============================================================
+.param f     = 900e6
+.param w     = {2*3.141592653589793*f}
+.param Rself = 73.079010
+.param Xself = 42.5
+.param Lant  = {Xself/w}            ; antenna self-reactance  (7.516 nH)
+.param Cmat  = {1/(w*Xself)}         ; conjugate match         (4.161 pF)
+
+* ---- coupling for the chosen separation  -------------
+.param Pin    = 1.0  ; watts of tx
+.param dcm    = 100  ; seperation in cm  (overridden in .control loop)
+.param psideg = 0    ; angle
+.include "dipolecoupling.maxwell.cir"
+
+* ---- expose to control section
+.csparam c_Pin    = {Pin}
+.csparam c_dcm    = {dcm}
+.csparam c_psideg = {psideg}
+
+* transmit loop: source - match - antenna(R + L) - ammeter - mutual EMF
+Vs n1 0 DC 0 AC {Vsrc} 
+Rs   n1 n2 {Rself}
+Cs   n2 tx {Cmat}
+Ltx  tx ta {Lant}
+Rtx  ta tb {Rself}
+Vse1 tb tc DC 0                  ; ammeter: I1 = i(Vse1)
+Hr1  tc 0  Vse2 {R21}            ; resistive (radiative) mutual EMF = R21*I2
+
+* receive loop: antenna(L + R) - ammeter - mutual EMF - load - match
+Lrx  0  ra {Lant}
+Rrx  ra rb {Rself}
+Vse2 rb rc DC 0                     ; ammeter: I2 = i(Vse2)
+Hr2  rc rd Vse1 {R21}              ; resistive (radiative) mutual EMF = R21*I1
+RL   rd re {Rself}                  ; conjugate-matched load resistance
+CL   re 0  {Cmat}
+
+* reactive (inductive) mutual coupling between the two antenna inductors
+K12  Ltx Lrx {kc}
+
+.ac lin 1 {f} {f}
+
+.control
+  unset appendwrite                  ; first wrdata creates a fresh file
+
+  let dcm_lo = 1
+  let dcm_hi = 200
+  let dcm_step = 1
+
+  let val = dcm_lo
+  while val le dcm_hi
+    alterparam dcm = $&val            ; change the .param 
+    reset                             ; and then re-expand R21, kc for .param dcm
+    run                               ; AC solve at f for separation
+
+    let r_Pin    = c_Pin
+    let r_dcm    = val                ; swept value 
+    let r_psideg = c_psideg
+
+    let i1    = abs(i(Vse1))
+    let i2    = abs(i(Vse2))
+    let Prx   = 0.5*73.079010*i2*i2   ; power delivered to the load
+    let Ptx   = 0.5*73.079010*i1*i1   ; power radiated by the TX antenna
+    let ratio = Prx/Ptx               ; accepted power
+
+    wrdata twoport.kron.raw r_Pin r_dcm r_psideg i1 i2 Prx Ptx ratio
+    set appendwrite                   ; every later row appends
+
+    let val = val + dcm_step
+  end
+.endc
+.end
+

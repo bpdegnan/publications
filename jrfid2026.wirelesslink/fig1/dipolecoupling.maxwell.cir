@@ -1,0 +1,35 @@
+* dipolecouping.maxwell.cir
+* Brian Degnan, 2026JUN06 version
+* Please see notes in the paper
+* Licensed under GPL-3.  Please improve and publish.
+
+* ---------- sine / cosine integral approximations ----------
+.func faux(x) {(1/(x))*((pow(x,8)+38.027264*pow(x,6)+265.187033*pow(x,4)+335.677320*pow(x,2)+38.102495)/(pow(x,8)+40.021433*pow(x,6)+322.624911*pow(x,4)+570.236280*pow(x,2)+157.105423))}
+.func gaux(x) {(1/(x*x))*((pow(x,8)+42.242855*pow(x,6)+302.757865*pow(x,4)+352.018498*pow(x,2)+21.821899)/(pow(x,8)+48.196927*pow(x,6)+482.485984*pow(x,4)+1114.978885*pow(x,2)+449.690326))}
+.func si(x) {(x <= 1) ? (x - pow(x,3)/18 + pow(x,5)/600 - pow(x,7)/35280 + pow(x,9)/3265920) : (1.5707963267949 - faux(x)*cos(x) - gaux(x)*sin(x))}
+.func ci(x) {(x <= 1) ? (0.5772156649015 + ln(x) - pow(x,2)/4 + pow(x,4)/96 - pow(x,6)/4320 + pow(x,8)/322560) : (faux(x)*sin(x) - gaux(x)*cos(x))}
+
+* ---------- constants ----------
+.param pinum = 3.141592653589793
+.param eta_  = 376.730313
+.param lam_  = {2.99792458e8/f}
+.param kw    = {2*pinum/lam_}
+.param Lhw   = {lam_/2}
+
+* derived geometry, arguments of Si, Ci
+.param dm    = {dcm/100}
+.param rgeo  = {sqrt(dm*dm + Lhw*Lhw)}
+.param u0    = {kw*dm}
+.param u1    = {kw*(rgeo + Lhw)}
+.param u2    = {kw*(rgeo - Lhw)}
+
+* mutual impedance from the induced-EMF integrals
+.param R21d  = {(eta_/(4*pinum))*(2*ci(u0) - ci(u1) - ci(u2))}
+.param X21d  = {-(eta_/(4*pinum))*(2*si(u0) - si(u1) - si(u2))}
+.param cpsi  = {cos(psideg*pinum/180)}
+
+* polarization (far-field cos psi) and final coupling
+.param R21   = {R21d*cpsi}
+.param X21   = {X21d*cpsi}
+.param kc    = {X21/Xself}
+.param Vsrc  = {sqrt(8*Rself*Pin)}
