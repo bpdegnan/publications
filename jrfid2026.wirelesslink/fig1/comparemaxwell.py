@@ -75,7 +75,7 @@ axr.set_xlabel("dipole separation distance [cm]")
 axr.grid(True, which="both", alpha=0.25)
 
 fig.tight_layout()
-out = "dipole_spice_vs_maxwell.eps"
+out = "equivalency.eps"
 fig.savefig(out, format="eps")
 print("wrote", out, " worst rel. residual =", f"{rel.max():.2e}")
 
