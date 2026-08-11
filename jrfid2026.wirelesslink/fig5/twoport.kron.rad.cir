@@ -1,0 +1,82 @@
+* twoport.kron.rad.cir ===========================================
+* Brian Degnan, 2026JUN20 version
+* Please see notes in the paper
+* Licensed under GPL-3.  Please improve and publish.
+*
+* Two parallel half-wave dipoles @ 900 MHz, Kron equivalent two-port.
+
+
+.lib "$SPICE_LIB/sky130.lib.spice" tt
+.include "$SPICE_DEVICES/devices.cir"
+
+* ============================================================
+.param f     = 900e6
+.param w     = {2*3.141592653589793*f}
+.param Rself = 73.079010
+.param Xself = 42.5
+.param Lant  = {Xself/w}            ; antenna self-reactance  (7.516 nH)
+.param Cmat  = {1/(w*Xself)}         ; conjugate match         (4.161 pF)
+
+* ---- fixed arguments; psideg is overridden in the .control loop ----
+.param Pin    = 1.0  ; watts of transmitter
+.param dcm    = 100  ; separation in cm
+.param psideg = 0    ; rotation about line of sight (deg)
+.include "dipolecoupling.maxwell.cir"
+
+* ---- expose to control section
+.csparam c_Pin    = {Pin}
+.csparam c_dcm    = {dcm}
+.csparam c_psideg = {psideg}
+
+* transmit loop: source - match - antenna(R + L) - ammeter - mutual EMF
+Vs n1 0 DC 0 AC {Vsrc}
+Rs   n1 n2 {Rself}
+Cs   n2 tx {Cmat}
+Ltx  tx ta {Lant}
+Rtx  ta tb {Rself}
+Vse1 tb tc DC 0                  ; ammeter: I1 = i(Vse1)
+Hr1  tc 0  Vse2 {R21}            ; resistive (radiative) mutual EMF = R21*I2
+
+* receive loop: antenna(L + R) - ammeter - mutual EMF - load - match
+Lrx  0  ra {Lant}
+Rrx  ra rb {Rself}
+Vse2 rb rc DC 0                     ; ammeter: I2 = i(Vse2)
+Hr2  rc rd Vse1 {R21}              ; resistive (radiative) mutual EMF = R21*I1
+RL   rd re {Rself}                  ; conjugate-matched load resistance
+CL   re 0  {Cmat}
+
+* reactive (inductive) mutual coupling between the two antenna inductors
+K12  Ltx Lrx {kc}
+
+.ac lin 1 {f} {f}
+
+.control
+  unset appendwrite                  ; first wrdata creates a fresh file
+
+  let psi_lo = 0
+  let psi_hi = 360
+  let psi_step = 5
+
+  let val = psi_lo
+  while val le psi_hi
+    alterparam psideg = $&val          ; rotate ...
+    reset                              ; ... re-expand R21, kc for this psi
+    run                                
+
+    let r_Pin    = c_Pin
+    let r_dcm    = c_dcm               ; fixed (distance not swept)
+    let r_psideg = val                 ; swept value
+
+    let i1    = abs(i(Vse1))
+    let i2    = abs(i(Vse2))
+    let Prx   = 0.5*73.079010*i2*i2    ; power delivered to the load
+    let Ptx   = 0.5*73.079010*i1*i1    ; power radiated by the TX antenna
+    let ratio = Prx/Ptx
+
+    wrdata twoport.kron.rad.csv r_Pin r_dcm r_psideg i1 i2 Prx Ptx ratio
+    set appendwrite
+
+    let val = val + psi_step
+  end
+.endc
+.end
