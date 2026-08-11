@@ -1,0 +1,213 @@
+* ============================================================
+* complete.cir
+* Brian Degnan
+* version 23JUN2026
+* GPL-3, please improve and publish
+*
+* TRANSISTOR-LEVEL tag IC for the complete bidirectional UHF-RFID link,
+* in skywater sky130. This is with the tag silicon flattened from
+* the abstract abnmos/abpmos wrappers down to explicit sky130_fd_pr fets, and
+* with the behavioral slicer (Bdem) replaced by a real sky130 comparator.
+*
+
+* ============================================================
+.lib "$SPICE_LIB/sky130.lib.spice" tt
+
+* ---- sky130 device shorthands (so the netlist reads cleanly) ----
+* unit fet sizes = the abstract-library units
+.param Wn = 0.36   ; nfet_01v8 L=0.15 minimum-width bin
+.param Wp = 0.42   ; pfet_01v8 L=0.15 minimum-width bin
+.param Lu = 0.15
+
+* ---- global parameters ----
+.param fc    = 900e6
+.param w     = {2*3.141592653589793*fc}
+.param Pin   = 1.0                  ; reader power into its antenna [W]
+.param Vamp  = {sqrt(8*73.08*Pin)}  ; reader Thevenin amplitude (~24.16 V)
+
+* antenna self/mutual at 1 m (validated dipole two-port)
+.param Rself = 73.08
+.param Lself = 7.515n
+.param Cmatch= 4.16p
+.param K12   = 0.1481
+.param R21   = 0.571
+
+* strap + matching
+.param Lstrap= 2n
+.param Rstrap= 1.0
+.param Lmat  = 35n
+.param Cmat  = 0.6p
+
+* backscatter modulator
+.param Vmodhi= 2.5
+.param Nmod  = 2                    ; shunt FET = Nmod parallel unit nfets (m=Nmod).
+                                  
+
+* tag-side downlink demodulator (envelope-detector RC)
+.param Renv  = 2.5k
+.param Cenv  = 10p
+.param Rref  = 50k
+.param Cref  = 20p
+
+* transistor comparator/slicer sizing (5T OTA + inverter buffer)
+.param Wcin  = 4      ; pMOS input-pair width (um)  -- env/ref ~0.18 V => pMOS input
+.param Wctl  = 8      ; pMOS tail / bias-ref width
+.param Wcld  = 2      ; nMOS mirror-load width
+.param Lc    = 0.5    ; comparator channel length (gain)
+.param Rcbias= 8meg   ; sets the OTA tail current from vdd (~150 nA: light load on
+                      ; the thin pump margin, yet fast enough for the 80 ns notches)
+
+* =====================================================================
+*  1) READER  (behavioral instrument: 1 W ASK/PIE carrier)
+* =====================================================================
+* PIE: bit encoded in the HIGH duration before each notch. Notches widened to
+* 80 ns (vs full.cir's 26 ns) so env fully settles and the REAL transistor
+* comparator -- finite gain/speed/offset -- gets a clear env-vs-ref margin to
+* slice. (full.cir's behavioral comparator had infinite gain and did not need it.)
+Vdl   dlenv 0  PWL( 0n 1  400n 1
++     568n 1  570n 0.1  648n 0.1  650n 1            ; bit 1 (long high, 80 ns notch)
++     718n 1  720n 0.1  798n 0.1  800n 1            ; bit 0 (short high)
++     968n 1  970n 0.1 1048n 0.1 1050n 1            ; bit 1 (long high)
++    1218n 1 1220n 0.1 1298n 0.1 1300n 1            ; bit 1 (long high)
++    2500n 1 )
+Btx   txin 0   V = {Vamp}*v(dlenv)*sin({w}*time)
+Rsrc  txin nrs {Rself}
+Csrc  nrs  nr1 {Cmatch}
+Vsns1 nr1  nr2 0
+Brad1 nr2  nr3 V = {R21}*i(Vsns2)
+Rrad1 nr3  nr4 {Rself}
+L1    nr4  0   {Lself}
+
+* =====================================================================
+*  2) FREE SPACE @ 1 m = two-port coupling (passive / behavioral)
+* =====================================================================
+K12   L1 L2 {K12}
+
+* =====================================================================
+*  3) TAG DIPOLE
+* =====================================================================
+L2    tp   ta  {Lself}
+Vsns2 ta   tb  0
+Brad2 tb   tc  V = {R21}*i(Vsns1)
+Rrad2 tc   tn  {Rself}
+
+* =====================================================================
+*  4) STRAP + CONJUGATE MATCH (passive) -> rfp, rfn
+* =====================================================================
+Lsp   tp   m1  {Lstrap/2}
+Rsp   m1   m2  {Rstrap/2}
+Lmp   m2   rfp {Lmat/2}
+Lsn   tn   m3  {Lstrap/2}
+Rsn   m3   m4  {Rstrap/2}
+Lmn   m4   rfn {Lmat/2}
+Cm    rfp  rfn {Cmat}
+Rcmp  rfp  0   1e6
+Rcmn  rfn  0   1e6
+
+* =====================================================================
+*  5) CROSS-COUPLED CHARGE PUMP -> vdd      (sky130 fets; D G S B)
+* =====================================================================
+XMN1  rfp rfn 0   0   sky130_fd_pr__nfet_01v8 w={Wn} l={Lu}
+XMN2  rfn rfp 0   0   sky130_fd_pr__nfet_01v8 w={Wn} l={Lu}
+XMP1  rfp rfn vdd vdd sky130_fd_pr__pfet_01v8 w={Wp} l={Lu}
+XMP2  rfn rfp vdd vdd sky130_fd_pr__pfet_01v8 w={Wp} l={Lu}
+Cstor vdd 0   2.5p
+Rload vdd 0   100k
+
+* =====================================================================
+*  5b) TAG DEMODULATOR: diode-connected nfet detector + RC, then a real
+*      sky130 comparator (5-transistor OTA + inverter buffer) as the slicer.
+*      env/ref sit at ~0.18 V, below the nfet Vth, so the OTA uses a pMOS
+*      input pair (works with low common mode) with an nMOS mirror load.
+*      Output: demod HIGH when env > ref (i.e. carrier present, no ASK notch).
+* =====================================================================
+Xdet  rfp rfp env 0  sky130_fd_pr__nfet_01v8 w={Wn} l={Lu}   ; diode-connected
+Renvr env 0 {Renv}
+Cenvc env 0 {Cenv}
+Rrefr env ref {Rref}
+Crefc ref 0 {Cref}
+
+* -- OTA bias: Rcbias sets a reference current into a diode-connected pMOS;
+*    the tail pMOS mirrors it (sources on vdd, the harvested rail) --
+Rcb    vdd  nbias {Rcbias}
+Xmbref nbias nbias vdd vdd sky130_fd_pr__pfet_01v8 w={Wctl} l={Lc}
+Xmtail ntail nbias vdd vdd sky130_fd_pr__pfet_01v8 w={Wctl} l={Lc}
+* -- pMOS input pair: gate env -> nA (mirror master), gate ref -> nB (output) --
+Xm1   nA  env  ntail vdd sky130_fd_pr__pfet_01v8 w={Wcin} l={Lc}
+Xm2   nB  ref  ntail vdd sky130_fd_pr__pfet_01v8 w={Wcin} l={Lc}
+* -- nMOS current-mirror load --
+Xm3   nA  nA   0 0 sky130_fd_pr__nfet_01v8 w={Wcld} l={Lc}
+Xm4   nB  nA   0 0 sky130_fd_pr__nfet_01v8 w={Wcld} l={Lc}
+* -- two-inverter buffer/slicer: nB -> d1 -> demod (clean rail at vdd) --
+Xpi1  d1    nB vdd vdd sky130_fd_pr__pfet_01v8 w=2 l={Lu}
+Xni1  d1    nB 0   0   sky130_fd_pr__nfet_01v8 w=1 l={Lu}
+Xpi2  demod d1 vdd vdd sky130_fd_pr__pfet_01v8 w=2 l={Lu}
+Xni2  demod d1 0   0   sky130_fd_pr__nfet_01v8 w=1 l={Lu}
+
+* =====================================================================
+*  6) BACKSCATTER MODULATOR (UPLINK): shunt nfet across rfp-rfn, m=Nmod
+* =====================================================================
+Vmod  gmod 0   PWL( 0 0  2000n 0  2001n {Vmodhi}  2200n {Vmodhi}  2201n 0
++                  2400n 0  2401n {Vmodhi}  2800n {Vmodhi}  2801n 0  2900n 0 )
+XMmod rfp  gmod rfn 0  sky130_fd_pr__nfet_01v8 w={Wn} l={Lu} m={Nmod}
+
+* =====================================================================
+*  7) READER FRONT END: carrier cancellation -> homodyne I/Q (behavioral)
+* =====================================================================
+Vgc   gcn 0    DC 0
+Vgs   gsn 0    DC 0
+Brx   rxres 0  V = i(Vsns1) - v(gcn)*cos({w}*time) - v(gsn)*sin({w}*time)
+
+Bdi0  di0  0   V = i(Vsns1)*cos({w}*time)
+Rli0a di0  d0a 10k
+Cli0a d0a  0   2p
+Rli0b d0a  dif0 100k
+Cli0b dif0 0   0.2p
+Bdq0  dq0  0   V = i(Vsns1)*sin({w}*time)
+Rlq0a dq0  q0a 10k
+Clq0a q0a  0   2p
+Rlq0b q0a  qbb0 100k
+Clq0b qbb0 0   0.2p
+Bmag0 bsmag0 0 V = sqrt(v(dif0)*v(dif0) + v(qbb0)*v(qbb0))
+
+Bdi   di   0   V = v(rxres)*cos({w}*time)
+Rlpi1 di   dia 10k
+Clpi1 dia  0   2p
+Rlpi2 dia  dif 100k
+Clpi2 dif  0   0.2p
+Bdq   dq   0   V = v(rxres)*sin({w}*time)
+Rlpq1 dq   qia 10k
+Clpq1 qia  0   2p
+Rlpq2 qia  qbb 100k
+Clpq2 qbb  0   0.2p
+Bmag  bsmag 0  V = sqrt(v(dif)*v(dif) + v(qbb)*v(qbb))
+
+* =====================================================================
+*  analysis
+* =====================================================================
+.ic v(vdd)=0
+.options gmin=1e-12 reltol=1e-4 abstol=1e-9 vntol=1e-7 method=gear
+.tran 10p 2900n 0 10p uic
+.control
+  * ---- pass 1: canceller OFF -- learn the self-jam carrier leakage ----
+  run
+  meas tran idc AVG v(dif0) from=1800n to=1980n
+  meas tran qdc AVG v(qbb0) from=1800n to=1980n
+  alter Vgc = 2*idc
+  alter Vgs = 2*qdc
+  echo "carrier-cancellation weights: Gc =" $&idc " x2,  Gs =" $&qdc " x2"
+
+  * ---- pass 2: canceller ON ----
+  run
+  meas tran vdd_chg  AVG v(vdd)   from=350n  to=395n
+  meas tran vdd_dl   MIN v(vdd)   from=400n  to=1300n
+  meas tran vdd_ul   MIN v(vdd)   from=2000n to=2800n
+  meas tran dem_hi   AVG v(demod) from=350n  to=395n   ; slicer output, CW (env>ref)
+  meas tran dem_lo   MIN v(demod) from=1240n to=1290n  ; slicer output, late notch (env<ref)
+  meas tran bs_on    AVG v(bsmag) from=2050n to=2180n
+  meas tran bs_off   AVG v(bsmag) from=2250n to=2380n
+  print vdd_chg vdd_dl vdd_ul dem_hi dem_lo bs_off bs_on
+  wrdata complete.out v(dlenv) v(vdd) v(env) v(ref) v(demod) v(gmod) v(bsmag0) v(bsmag) v(dif) v(qbb)
+  echo "Transistor tag IC (sky130). Columns match full.out."
+.endc
+.end
