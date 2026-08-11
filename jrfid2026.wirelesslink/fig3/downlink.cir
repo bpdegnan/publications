@@ -1,0 +1,93 @@
+* ============================================================
+* downlink_demod.cir
+* Brian Degnan, 2026JUN20 version
+* Please see notes in the paper
+* Licensed under GPL-3.  Please improve and publish.
+*
+* Reader-to-tag DOWNLINK: an ASK/PIE-modulated 900 MHz carrier is
+* rectified, the supply rides through the ASK notches, and an on-chip
+* envelope detector + slicer recover the command waveform. All active
+* devices are from the abstract library (abnmos / abpmos); the two
+* "diodes" are diode-connected abnmos (gate tied to drain).
+*
+* Chain:
+*   PIE envelope (V_cmd) x carrier  ->  coupling caps  ->
+*   cross-coupled pump (vrect)  ->  blocking diode  ->  vdd (big Cstor,
+*   rides through notches) with shunt limiter  ;  envelope detector
+*   (diode + RC) -> env ; slow RC -> ref ; comparator -> demod.
+*
+* Bits encoded: 1 0 1 1 0 0 1  (TARI = 0.2 us, ~30x time-compressed vs a
+* real Gen2 TARI of 6.25-25 us, to keep the .tran reasonable). 
+
+
+* ============================================================
+.lib "$SPICE_LIB/sky130.lib.spice" tt
+.include "$SPICE_DEVICES/devices.cir"
+
+.param pamp   = 0.7       ; carrier amplitude per side
+.param pf     = 900e6
+.param wc     = {2*3.141592653589793*pf}
+.param Cc     = 1p        ; coupling caps
+.param Vclamp = 1.2       ; shunt-limiter clamp voltage
+.param Rsh    = 1k        ; shunt-limiter series resistance
+.param Cstor  = 20p       ; storage (large -> rides through notches)
+.param Rload  = 100k
+.param Renv   = 2.5k      ; envelope-detector load 
+.param Cenv   = 10p
+.param Rref   = 50k       ; slicer reference RC (Rref*Cref about 1 us >> TARI)
+.param Cref   = 20p
+.param pvdd   = 1.0       ; recovered-logic rail (slicer output swing)
+
+* ---- ASK/PIE envelope (1.0 = full power, 0.1 = notch) ----
+V_cmd env_cmd 0 PWL( 0n 1 400n 1 800n 1 802n 0.1
++     902n 0.1 904n 1 1104n 1 1106n 0.1
++     1206n 0.1 1208n 1 1608n 1 1610n 0.1
++     1710n 0.1 1712n 1 2112n 1 2114n 0.1
++     2214n 0.1 2216n 1 2416n 1 2418n 0.1
++     2518n 0.1 2520n 1 2720n 1 2722n 0.1
++     2822n 0.1 2824n 1 3224n 1 3226n 0.1
++     3326n 0.1 3328n 1 3728n 1 )
+
+* ---- modulated balanced carrier ----
+B_rfp rfp_d 0 V = {pamp}*v(env_cmd)*sin({wc}*time)
+B_rfn rfn_d 0 V = -{pamp}*v(env_cmd)*sin({wc}*time)
+Ccp   rfp_d rfp {Cc}
+Ccn   rfn_d rfn {Cc}
+
+* ---- cross-coupled pump -> vrect ----   (drain gate source bulk)
+XMP1 rfp rfn vrect vrect abpmos
+XMP2 rfn rfp vrect vrect abpmos
+XMN1 rfp rfn 0     0     abnmos
+XMN2 rfn rfp 0     0     abnmos
+Cvr  vrect 0 1p
+Rbp  rfp 0 5meg
+Rbn  rfn 0 5meg
+
+* ---- blocking diode (diode-connected abnmos) vrect -> vdd ----
+Xblk vrect vrect vdd 0 abnmos
+
+* ---- storage + load + shunt limiter on vdd ----
+Cstor vdd 0 {Cstor}
+RL    vdd 0 {Rload}
+Blim  vdd 0 I = (v(vdd) > Vclamp) ? (v(vdd)-Vclamp)/Rsh : 0
+
+* ---- envelope detector: diode-connected abnmos rfp -> env, then RC ----
+Xdet rfp rfp env 0 abnmos
+Renvr env 0 {Renv}
+Cenvc env 0 {Cenv}
+
+* ---- slicer reference (slow average of env) and comparator ----
+Rrefr env ref {Rref}
+Crefc ref 0 {Cref}
+Bdem  demod 0 V = (v(env) > v(ref)) ? pvdd : 0
+
+.ic v(vdd)=0 v(vrect)=0
+.options gmin=1e-12 reltol=1e-3 method=gear
+.tran 40p 3778n 0 40p uic
+.control
+  run
+  wrdata downlink.csv v(env_cmd) v(vdd) v(vrect) v(env) v(ref) v(demod)
+  echo "Columns: cmd-envelope, supply(vdd), pump(vrect), detected(env), threshold(ref), sliced(demod)."
+  echo "Decode PIE symbol timing offline from demod transitions."
+.endc
+.end
