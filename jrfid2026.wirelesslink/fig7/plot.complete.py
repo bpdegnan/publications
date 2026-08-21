@@ -42,7 +42,13 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless / file-only backend
+
+DEBUG = True #<-- tacos 
+if DEBUG:
+    matplotlib.use("MacOSX")
+else:
+    matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -121,7 +127,7 @@ def make_figure(data: dict[str, np.ndarray]) -> plt.Figure:
     for b, tc in DL_BITS:
         ax_cmd.text(tc, 1.12, b, ha="center", va="center", fontsize=8, color="0.25")
     ax_cmd.set_title(
-        "Full UHF-RFID: charge → downlink command → backscatter reply → decode",
+        "UHF-RFID: charge → downlink command → backscatter reply → decode",
         #"Full UHF-RFID exchange: charge → downlink command → backscatter reply → decode",
         fontsize=9.5, loc="left", pad=18,
     )
@@ -135,34 +141,95 @@ def make_figure(data: dict[str, np.ndarray]) -> plt.Figure:
 
     # --- Panel 3: tag demodulator (recover the downlink command) ----------
     shade_phases(ax_dem)
-    (l_env,) = ax_dem.plot(t_ns, data["env"], color="C0", label=r"$v_{\mathrm{env}}$ (detector)")
-    (l_ref,) = ax_dem.plot(
-        t_ns, data["ref"], color="C3", lw=0.8, ls="--", label=r"$v_{\mathrm{ref}}$ (threshold)"
+
+    (l_env,) = ax_dem.plot(
+        t_ns,
+        data["env"],
+        color="C0",
+        label=r"$v_{\mathrm{env}}$ (detector)",
     )
+
+    (l_ref,) = ax_dem.plot(
+        t_ns,
+        data["ref"],
+        color="C3",
+        lw=0.8,
+        ls="--",
+        label=r"$v_{\mathrm{ref}}$ (threshold)",
+    )
+
     env_hi = np.percentile(data["env"], 95) or 1.0
     dem_lo, dem_hi = data["demod"].min(), (data["demod"].max() or 1.0)
-    dem_scaled = (data["demod"] - dem_lo) / (dem_hi - dem_lo) * env_hi
+
+    dem_scaled = (
+        (data["demod"] - dem_lo)
+        / (dem_hi - dem_lo)
+        * env_hi
+    )
+
     (l_dem,) = ax_dem.plot(
-        t_ns, dem_scaled, color="C2", lw=0.7, drawstyle="steps-post", zorder=1.5,
+        t_ns,
+        dem_scaled,
+        color="C2",
+        lw=0.7,
+        drawstyle="steps-post",
+        zorder=1.5,
         label=r"$v_{\mathrm{demod}}$ (sliced)",
     )
+
     ax_dem.set_ylabel("tag demod\n(V)")
     ax_dem.grid(True)
-    leg = ax_dem.legend(
-        handles=[l_env, l_ref, l_dem], loc="lower center", ncol=3, handlelength=1.4
+
+    # positioning
+
+    leg_env = ax_dem.legend(
+        handles=[l_env],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.5), #detector
+        handlelength=1.4,
     )
-    leg.get_frame().set_alpha(0.85)
-    leg.get_frame().set_edgecolor("none")
-    # clarify: the slicer recovers the command during downlink; during the tag's
-    # own backscatter it grazes threshold (a real tag blanks its Rx while sending)
-    ax_dem.annotate(
-        "command\nrecovered", xy=(850, 0.06), ha="center", va="center",
-        fontsize=7.5, color="0.30",
+    leg_env.get_frame().set_alpha(0.85)
+    leg_env.get_frame().set_edgecolor("none")
+    ax_dem.add_artist(leg_env)
+
+    leg_ref = ax_dem.legend(
+        handles=[l_ref],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.6),
+        handlelength=1.4,
     )
-    ax_dem.annotate(
-        "tag TX\n(Rx blanked\nin practice)", xy=(2400, 0.06), ha="center", va="center",
-        fontsize=7.5, color="0.30",
+    leg_ref.get_frame().set_alpha(0.85)
+    leg_ref.get_frame().set_edgecolor("none")
+    ax_dem.add_artist(leg_ref)
+
+    leg_dem = ax_dem.legend(
+        handles=[l_dem],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.4),
+        handlelength=1.4,
     )
+    leg_dem.get_frame().set_alpha(0.85)
+    leg_dem.get_frame().set_edgecolor("none")
+
+    # the slicer recovers the command during downlink
+    #
+    # ax_dem.annotate(
+    #     "command\nrecovered",
+    #     xy=(850, 0.06),
+    #     ha="center",
+    #     va="center",
+    #     fontsize=7.5,
+    #     color="0.30",
+    # )
+
+    # ax_dem.annotate(
+    #     "tag TX",
+    #     xy=(2400, 0.06),
+    #     ha="center",
+    #     va="center",
+    #     fontsize=7.5,
+    #     color="0.30",
+    # )
 
     # --- Panel 4: reader homodyne decode of the backscatter reply ---------
     cwin = (t_ns >= CREF_WIN[0]) & (t_ns <= CREF_WIN[1])
@@ -225,9 +292,14 @@ def main() -> None:
 
     out = args.out or args.out_file.with_suffix(".eps")
     data = load_wrdata(args.out_file)
+
+    #note, debug flag for Agg, search tacos
     fig = make_figure(data)
-    fig.savefig(out, format="eps", bbox_inches="tight")
-    print(f"wrote {out}  ({len(data['time'])} samples)")
+    if DEBUG:
+        plt.show()
+    else:
+        fig.savefig(out, format="eps", bbox_inches="tight")
+        print(f"wrote {out}  ({len(data['time'])} samples)")
 
 
 if __name__ == "__main__":
