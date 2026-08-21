@@ -231,7 +231,7 @@ def make_figure(data: dict[str, np.ndarray]) -> plt.Figure:
     #     color="0.30",
     # )
 
-    # --- Panel 4: reader homodyne decode of the backscatter reply ---------
+# --- Panel 4: reader homodyne decode of the backscatter reply ---------
     cwin = (t_ns >= CREF_WIN[0]) & (t_ns <= CREF_WIN[1])
     cref = np.mean(data["bsmag0"][cwin])  # 0 dBc = self-jam carrier
 
@@ -243,32 +243,86 @@ def make_figure(data: dict[str, np.ndarray]) -> plt.Figure:
     edges = np.diff(modulated.astype(int))
     starts = np.where(edges == 1)[0] + 1
     stops = np.where(edges == -1)[0] + 1
+
     if modulated[0]:
         starts = np.r_[0, starts]
     if modulated[-1]:
         stops = np.r_[stops, len(modulated) - 1]
+
     for s, e in zip(starts, stops):
         ax_rdr.axvspan(t_ns[s], t_ns[e], color="0.82", lw=0, zorder=1)
 
-    (l_raw,) = ax_rdr.plot(t_ns, to_dbc(data["bsmag0"]), color="0.45", label="raw (before)")
-    (l_can,) = ax_rdr.plot(t_ns, to_dbc(data["bsmag"]), color="C0", label="cancelled (after)")
+    (l_raw,) = ax_rdr.plot(
+        t_ns,
+        to_dbc(data["bsmag0"]),
+        color="0.45",
+        label="raw",
+    )
+
+    (l_can,) = ax_rdr.plot(
+        t_ns,
+        to_dbc(data["bsmag"]),
+        color="C0",
+        label="cancelled",
+    )
+
     # slicer threshold midway (in dB) between recovered 0 and 1 levels (uplink only)
     ul = (t_ns >= UPLINK_WIN[0]) & (t_ns <= UPLINK_WIN[1])
     lo = np.percentile(data["bsmag"][ul], 15)
     hi = np.percentile(data["bsmag"][ul], 85)
     thr_db = 0.5 * (to_dbc(lo) + to_dbc(hi))
+
     (l_slc,) = ax_rdr.plot(
-        list(UPLINK_WIN), [thr_db, thr_db], color="C3", lw=0.8, ls="--", label="slicer"
+        list(UPLINK_WIN),
+        [thr_db, thr_db],
+        color="C3",
+        lw=0.8,
+        ls="--",
+        label="slice threshold",
     )
+
     for b, tc in UL_BITS:
         ax_rdr.text(tc, 6.0, b, ha="center", va="center", fontsize=8, color="0.25")
+
     ax_rdr.set_ylabel("reader $|I{+}jQ|$ (dBc)")
     ax_rdr.set_xlabel("time (ns)")
     ax_rdr.set_ylim(to_dbc(lo) - 12, 10)
     ax_rdr.grid(True)
-    ax_rdr.legend(handles=[l_raw, l_can, l_slc], loc="lower right", ncol=3, handlelength=1.4)
+
+    # --- Separate legends so each can be positioned independently ----------
+
+    leg_raw = ax_rdr.legend(
+        handles=[l_raw],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.7), #raw 
+        handlelength=1.4,
+    )
+    leg_raw.get_frame().set_alpha(0.85)
+    leg_raw.get_frame().set_edgecolor("none")
+    ax_rdr.add_artist(leg_raw)
+
+    leg_can = ax_rdr.legend(
+        handles=[l_can],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.6),
+        handlelength=1.4,
+    )
+    leg_can.get_frame().set_alpha(0.85)
+    leg_can.get_frame().set_edgecolor("none")
+    ax_rdr.add_artist(leg_can)
+
+    leg_slc = ax_rdr.legend(
+        handles=[l_slc],
+        loc="upper left",
+        bbox_to_anchor=(0.75, 0.5),
+        handlelength=1.4,
+    )
+    leg_slc.get_frame().set_alpha(0.85)
+    leg_slc.get_frame().set_edgecolor("none")
+
     ax_dbm = ax_rdr.secondary_yaxis(
-        "right", functions=(lambda d: d + P_CARRIER_DBM, lambda d: d - P_CARRIER_DBM)
+        "right",
+        functions=(lambda d: d + P_CARRIER_DBM, lambda d: d - P_CARRIER_DBM),
     )
     ax_dbm.set_ylabel("power (dBm)")
 
