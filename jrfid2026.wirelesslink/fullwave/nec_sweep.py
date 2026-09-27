@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """Independent full-wave (Method-of-Moments, NEC-2) check of the dipole two-port.
-
-Two parallel, centre-fed, half-wave dipoles at 900 MHz.  For each separation d the
-NEC-2 code (nec2c) solves the electric-field integral equation for the currents.
-Dipole 1 is driven with 1 V at its centre segment; dipole 2 is left as a passive,
-short-circuited wire.  With V1 = Z11 I1 + Z21 I2 and 0 = Z21 I1 + Z11 I2 (identical
-dipoles), the two-port follows from the two centre-segment currents:
+With V1 = Z11 I1 + Z21 I2 and 0 = Z21 I1 + Z11 I2 (identical dipoles), the two-port 
+follows from the two centre-segment currents:
 
     Z11 = V1 I1 / (I1^2 - I2^2),      Z21 = -Z11 I2 / I1 .
 

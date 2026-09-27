@@ -79,7 +79,7 @@ def make_figure(data: dict[str, np.ndarray]) -> plt.Figure:
     fig, axes = plt.subplots(3, 1, figsize=(5.4, 5.4), sharex=True)
     ax_cmd, ax_pwr, ax_dem = axes
 
-    # notch ("low power") intervals: command envelope below the 0.55 midpoint
+    # notch intervals: command envelope below the 0.55 midpoint
     cmd = data["env_cmd"]
     notch = cmd < 0.55 * cmd.max()
 
