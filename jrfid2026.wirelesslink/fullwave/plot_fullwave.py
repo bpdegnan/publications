@@ -34,14 +34,14 @@ C1, C2, C3, C4, C5 = "#1f4e8c", "#e07b39", "#5a5a5a", "#7a3b8f", "#2a9d8f"
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(8, 9.2), sharex=True,
                                     gridspec_kw={"height_ratios": [2.2, 3, 1.6]})
 dcm = d_n*100
-ax1.semilogx(dcm, Zc.real, "-",  color=C1, lw=2.0, label=r"$R_{21}$ induced-EMF (Carter)")
-ax1.semilogx(dcm, Zc.imag, "-",  color=C4, lw=2.0, label=r"$X_{21}$ induced-EMF (Carter)")
+ax1.semilogx(dcm, Zc.real, "-",  color=C1, lw=2.0, label=r"$R_{21}$ induced-EMF ")
+ax1.semilogx(dcm, Zc.imag, "-",  color=C4, lw=2.0, label=r"$X_{21}$ induced-EMF ")
 ax1.semilogx(dcm[::4], Zn.real[::4], "o", color=C2, ms=4, mfc="none", label=r"$R_{21}$ NEC-2 MoM, $a$ = 0.1 mm")
 ax1.semilogx(dcm[::4], Zn.imag[::4], "s", color=C5, ms=4, mfc="none", label=r"$X_{21}$ NEC-2 MoM, $a$ = 0.1 mm")
 ax1.axhline(0, color="0.8", lw=0.8)
 ax1.set_ylabel(r"mutual impedance $Z_{21}$ [$\Omega$]")
 ax1.set_title("Induced-EMF SPICE vs. full-wave (NEC-2) solution @ 900 MHz")
-ax1.legend(frameon=False, fontsize=8, ncol=2)
+ax1.legend(frameon=False, fontsize=10, ncol=2)
 ax1.grid(True, which="both", alpha=0.25)
 
 #ax2.loglog(d_k*100, rat_k, "-", color=C1, lw=2.0, label="SPICE deck, Carter $Z_{21}$ (paper Fig. 1)")
@@ -53,7 +53,7 @@ ymin, ymax = ax2.get_ylim()
 for x, t in [(lam/(2*np.pi)*100, r"$\lambda/2\pi$"), (lam/2*100, r"$\lambda/2$"), (100, "1 m link")]:
     ax2.axvline(x, color="0.8", ls=":", lw=1); ax2.text(x, ymax, t, rotation=90, va="top", ha="right", fontsize=7, color="0.5")
 ax2.set_ylabel(r"power transfer $P_{rx}/P_{tx}$")
-ax2.legend(frameon=False, fontsize=8)
+ax2.legend(frameon=False, fontsize=10)
 ax2.grid(True, which="both", alpha=0.25)
 
 for a, col, lab in (("0.03", C4, "0.03"), ("0.1", C2, "0.1"), ("1", C3, "1")):
@@ -64,13 +64,16 @@ for a, col, lab in (("0.03", C4, "0.03"), ("0.1", C2, "0.1"), ("1", C3, "1")):
 zi = np.interp(d_sn[ok], d_n, nec_ratio(z))
 ax3.semilogx(d_sn[ok]*100, 100*(rat_sn[ok]/zi - 1), "x", color=C5, ms=3, label="SPICE (NEC-fed) vs. NEC-2")
 ax3.axhline(0, color="0.8", lw=0.8)
-ax3.set_ylabel(r"$P_{rx}/P_{tx}$ difference [%]"); ax3.set_xlabel("dipole separation distance [cm]")
-ax3.set_ylim(-12, 12); ax3.legend(frameon=False, fontsize=8, ncol=2); ax3.grid(True, which="both", alpha=0.25)
+ax3.set_ylabel(r"$P_{rx}/P_{tx}$ difference [%]"); 
+ax3.set_xlabel("dipole separation distance [cm]", fontsize=12)
+ax3.set_ylim(-12, 12); 
+ax3.legend(frameon=False, fontsize=9, ncol=2); ax3.grid(True, which="both", alpha=0.25)
 fig.tight_layout()
-fig.savefig("fullwave.eps", format="eps"); fig.savefig("fullwave.png", dpi=130)
+fig.savefig("fullwave.eps", format="eps"); 
+fig.savefig("fullwave.png", dpi=130)
 
 # ---- summary numbers ----
-print("wire radius | NEC Z11 (isolated)      | |Z21| NEC/induced-EMF @1m | Prx/Ptx NEC/induced-EMF @1m | far-field (>=50cm) max |diff| | near (1-10cm) max |diff|")
+print("wire radius | NEC Z11 (isolated)    | |Z21| NEC/induced-EMF @1m | Prx/Ptx NEC/induced-EMF @1m | far-field (>=50cm) max |diff| | near (1-10cm) max |diff|")
 for a in ("0.03", "0.1", "1"):
     zz = nec[a]; dd = zz[:, 0]/100
     hdr = open(f"nec_z.a{a}mm.csv").readline()

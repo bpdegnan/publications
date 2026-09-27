@@ -65,13 +65,13 @@ for x, t in [(lam / (2 * np.pi) * 100, r"radian sphere  $\lambda/2\pi$"),
 
 ax.set_ylabel(r"power transfer: $P_{rx}/P_{tx}=|I_2/I_1|^2$")
 ax.set_title("SPICE vs. Maxwell @ 900 MHz")
-ax.legend(frameon=False, fontsize=9)
+ax.legend(frameon=False, fontsize=11)
 ax.grid(True, which="both", alpha=0.25)
 
 rel = np.abs(spice - maxw) / maxw
 axr.loglog(dcm, rel, "-", color="#7a3b8f", lw=1.2)
 axr.set_ylabel("|SPICE - Maxwell|")
-axr.set_xlabel("dipole separation distance [cm]")
+axr.set_xlabel("dipole separation distance [cm]", fontsize=12)
 axr.grid(True, which="both", alpha=0.25)
 
 fig.tight_layout()
